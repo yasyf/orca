@@ -44,6 +44,25 @@ describe('OrcaRuntimeRpcServer', () => {
     ).toBe('wait')
   })
 
+  it('keeps recipe workspace creates alive while the recipe provisions', () => {
+    expect(
+      classifyRuntimeLongPoll({
+        id: 'req_recipe_create',
+        authToken: 'token',
+        method: 'worktree.createFromRecipe',
+        params: { repo: 'id:repo-1', recipe: 'cloud-sandbox', name: 'sandbox-task' }
+      })
+    ).toBe('wait')
+    expect(
+      classifyRuntimeLongPoll({
+        id: 'req_create',
+        authToken: 'token',
+        method: 'worktree.create',
+        params: { repo: 'id:repo-1', name: 'feature' }
+      })
+    ).toBeNull()
+  })
+
   it('keeps agent-prompt submission sockets alive during verification', () => {
     expect(
       classifyRuntimeLongPoll({
@@ -134,6 +153,48 @@ describe('OrcaRuntimeRpcServer', () => {
         })
         await session.done
 
+        expect(
+          session.frames.filter((frame) => frame._keepalive === true).length
+        ).toBeGreaterThanOrEqual(2)
+        expect(session.frames.filter((frame) => frame.ok !== undefined)).toHaveLength(1)
+      } finally {
+        await server.stop()
+      }
+    })
+
+    it('emits keepalives and wires the abort signal while a recipe create provisions', async () => {
+      const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+      const runtime = new OrcaRuntimeService()
+      const server = new OrcaRuntimeRpcServer({
+        runtime,
+        userDataPath,
+        keepaliveIntervalMs: 30
+      })
+      const dispatch = server['dispatcher']
+      let dispatchSignal: AbortSignal | undefined
+      vi.spyOn(dispatch, 'dispatch').mockImplementation(async (request, options) => {
+        dispatchSignal = options?.signal
+        await sleep(120)
+        return {
+          id: request.id,
+          ok: true,
+          result: { worktree: { id: 'remote-repo::/workspace/repo' } },
+          _meta: { runtimeId: runtime.getRuntimeId() }
+        }
+      })
+      await server.start()
+
+      try {
+        const metadata = readRuntimeMetadata(userDataPath)
+        const session = openFramedSession(metadata!.transports[0]!.endpoint, {
+          id: 'req_recipe_create',
+          authToken: metadata!.authToken,
+          method: 'worktree.createFromRecipe',
+          params: { repo: 'id:repo-1', recipe: 'cloud-sandbox', name: 'sandbox-task' }
+        })
+        await session.done
+
+        expect(dispatchSignal).toBeInstanceOf(AbortSignal)
         expect(
           session.frames.filter((frame) => frame._keepalive === true).length
         ).toBeGreaterThanOrEqual(2)

@@ -100,6 +100,29 @@ describe('adoptProvisionedRootSshCheckout', () => {
     )
   })
 
+  it('keeps the CLI provenance of a CLI-created recipe workspace', async () => {
+    seedRuntime(userDataPath, projectRoot)
+    registerSshGitProvider(connectionId, {
+      listWorktrees: vi.fn().mockResolvedValue([gitWorktree(projectRoot)]),
+      exec: sparseCheckoutProbe(false)
+    } as never)
+    const { store, setWorktreeMeta } = makeStore()
+    const cliProvenance = { kind: 'created-by-cli' as const, createdAt: 1 }
+
+    await adoptProvisionedRootSshCheckout({
+      userDataPath,
+      request: { ...request(projectRoot), cliProvenance },
+      repo: repo(projectRoot),
+      store,
+      isRepoCurrent: () => true
+    })
+
+    expect(setWorktreeMeta).toHaveBeenCalledWith(
+      `repo-1::${projectRoot}`,
+      expect.objectContaining({ cliProvenance })
+    )
+  })
+
   it('rejects a recipe checkout on a branch Orca did not request', async () => {
     seedRuntime(userDataPath, projectRoot)
     registerSshGitProvider(connectionId, {

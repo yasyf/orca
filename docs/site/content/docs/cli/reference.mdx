@@ -112,6 +112,14 @@ orca worktree create --name hidden-setup --setup inherit --json
 
 `--agent` launches the selected agent in the first terminal. `--prompt` sends initial work to that agent. `--setup run|skip|inherit` controls repo setup hooks; `inherit` follows the repo policy.
 
+Create a workspace on a fresh machine from a per-workspace environment recipe:
+
+```bash
+orca worktree create --repo id:<repoId> --recipe cloud-sandbox --name sandbox-task --base-branch origin/main --no-parent --json
+```
+
+`--recipe` runs that recipe from the source repo's `orca.yaml`, registers the machine it provisions, and creates the workspace there. It works with recipes that connect over SSH. If any step fails, Orca destroys the machine and creates nothing locally. An Orca app too old for this command fails with `incompatible_runtime` instead of creating an ordinary worktree.
+
 ## Terminals
 
 ```bash

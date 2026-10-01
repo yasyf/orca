@@ -1,18 +1,12 @@
-import {
-  finishAutomationWorkspaceProvenanceRequest,
-  releaseAutomationWorkspaceProvenanceRequest,
-  resolveAutomationWorkspaceProvenance
-} from '../../../automations/workspace-provenance'
 import { getLocalWorktreeCatalogVersion } from '../../../local-worktree-scan-generation'
 import { getExplicitWorktreeIdSelector } from '../../runtime-worktree-selection'
 import { splitWorktreeId } from '../../../../shared/worktree/id'
-import { buildCliWorkspaceProvenance } from '../../../../shared/cli-workspace-provenance'
 import { displayNameUpdatePinsLabel } from '../../../../shared/worktree/display-name-provenance'
 import { defineMethod } from '../core'
-import { buildManagedWorktreeCreateArgs } from './worktree-create-args'
+import { runRpcWorktreeCreate } from './worktree-create-run'
+import { WORKTREE_CREATE_FROM_RECIPE_METHOD } from './worktree-create-from-recipe'
 import { resolvePairedCallerHostId } from './paired-caller-host-id'
 import { resolveRuntimeNavigationTarget } from '../../../../shared/runtime-navigation'
-import { resolveRpcWorkspaceCreatorProvenance } from '../workspace-creator-context'
 import { WorktreeCreate, WorktreePrefetchCreateBase } from './worktree-create-schemas'
 import {
   WorktreeActivate,
@@ -79,50 +73,12 @@ export const WORKTREE_METHODS = [
     name: 'worktree.create',
     params: WorktreeCreate,
     handler: async (params, context) =>
-      // Why: a mobile create interrupted by a connection migration is retried with
-      // the same clientMutationId; dedupe so the host returns the in-flight/created
-      // worktree instead of spawning a duplicate. No key (desktop/CLI) runs plainly.
-      context.runtime.dedupeWorktreeCreate(params.repo, params.clientMutationId, async () => {
-        const { runtime } = context
-        const repo = await runtime.showRepo(params.repo)
-        const automationProvenance = resolveAutomationWorkspaceProvenance({
-          authority: runtime,
-          repoSelector: params.repo,
-          repo,
-          request: params.automationProvenanceRequest
-        })
-        // Why: provenance tokens are reserved before creation so retries can recover,
-        // but failed create attempts must release the reservation for a safe retry.
-        try {
-          const result = await runtime.createManagedWorktree(
-            buildManagedWorktreeCreateArgs(
-              params,
-              {
-                automationProvenance,
-                cliProvenance: buildCliWorkspaceProvenance(params.cliProvenanceRequest, {
-                  startupAgent: params.startupAgent ?? params.createdWithAgent,
-                  createdAt: Date.now()
-                }),
-                creatorProvenance: resolveRpcWorkspaceCreatorProvenance(context)
-              },
-              context.clientKind ? { clientKind: context.clientKind } : {}
-            )
-          )
-          finishAutomationWorkspaceProvenanceRequest(params.automationProvenanceRequest)
-          // Why stamped here: the create's change notification has bumped the generation, so this
-          // names the catalog that contains the new worktree.
-          const stamped = { ...result, catalogVersion: getLocalWorktreeCatalogVersion(repo.id) }
-          // Why: agent callers need a stable dispatch target without traversing
-          // terminal-list layout duplicates after creating the worktree.
-          return params.startupAgent && result.startupTerminal?.handle
-            ? { ...stamped, agentTerminalHandle: result.startupTerminal.handle }
-            : stamped
-        } catch (error) {
-          releaseAutomationWorkspaceProvenanceRequest(params.automationProvenanceRequest)
-          throw error
-        }
-      })
+      runRpcWorktreeCreate(params, context, async (args, repo) => ({
+        result: await context.runtime.createManagedWorktree(args),
+        catalogRepoId: repo.id
+      }))
   }),
+  WORKTREE_CREATE_FROM_RECIPE_METHOD,
   defineMethod({
     name: 'worktree.prefetchCreateBase',
     params: WorktreePrefetchCreateBase,

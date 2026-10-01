@@ -2,7 +2,7 @@ import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { prepareEphemeralVmWorkspaceTarget } from '@/lib/ephemeral-vm-workspace-target'
 import type { WorktreeCreationRequest } from '@/lib/pending-worktree-creation'
-import { getProjectIdentityKey } from '../../../shared/project-host-setup-projection'
+import { getPortableGitHubProjectId } from '../../../shared/project-host-setup-projection'
 import type { Repo } from '../../../shared/repo-types'
 import { translate } from '@/i18n/i18n'
 import { cleanupFailedEphemeralVmWorkspace } from '@/lib/ephemeral-vm-failed-create-cleanup'
@@ -182,15 +182,7 @@ export async function attachEphemeralVmRuntimeToWorkspace(
 }
 
 function resolvePortableEphemeralVmProjectId(repo: Repo | undefined): string | null {
-  if (!repo) {
-    return null
-  }
-  // Why: reuse the shared GitHub-identity projection so the portable project id
-  // can't drift from the canonical `github:<owner>/<repo>` key. Gate on the
-  // `github:` prefix to preserve the previous null-for-non-GitHub behavior
-  // (the shared key also returns `git:`/`repo:` fallbacks we don't want here).
-  const key = getProjectIdentityKey(repo)
-  return key.startsWith('github:') ? key : null
+  return repo ? getPortableGitHubProjectId(repo) : null
 }
 
 export async function cleanupEphemeralVmRuntimeForFailedCreate(

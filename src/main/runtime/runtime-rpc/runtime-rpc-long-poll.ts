@@ -26,6 +26,11 @@ export function classifyRuntimeLongPoll(request: RpcRequest): RuntimeLongPollCla
   if (request.method === 'orchestration.workerStart') {
     return 'wait'
   }
+  // Why: a recipe create provisions a machine for minutes before the workspace exists, and its
+  // abort signal is how a departed CLI stops that provisioning.
+  if (request.method === 'worktree.createFromRecipe') {
+    return 'wait'
+  }
   if (request.method === 'browser.clientHost.attach') {
     return 'browser-host'
   }

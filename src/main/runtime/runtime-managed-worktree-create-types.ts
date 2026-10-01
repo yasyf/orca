@@ -1,5 +1,8 @@
 import type { AgentLaunchPreferences } from '../../shared/agent-session-host-authority'
-import type { CreateWorktreeArgs } from '../../shared/worktree/create-types'
+import type {
+  AdoptProvisionedRootArgs,
+  CreateWorktreeArgs
+} from '../../shared/worktree/create-types'
 import type {
   AutomationWorkspaceProvenance,
   CliWorkspaceProvenance,
@@ -65,6 +68,8 @@ export type RuntimeManagedWorktreeCreateArgs = {
   startup?: WorktreeStartupLaunch
   startupDraft?: string
   startupDraftPaste?: WorktreeStartupDraftPaste
+  /** Adopt a recipe's provisioned SSH checkout as the workspace instead of adding a worktree. */
+  provisionedRoot?: Pick<AdoptProvisionedRootArgs, 'runtimeId' | 'expectedPath' | 'expectedRefHead'>
   lineage?: {
     parentWorkspace?: string
     parentWorkspaceOrigin?: 'manual'

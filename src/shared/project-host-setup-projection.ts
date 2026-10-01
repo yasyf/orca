@@ -119,6 +119,15 @@ export function getProjectIdentityKey(
   return `${HOST_LOCAL_PROJECT_ID_PREFIX}${repo.id}`
 }
 
+/** The `github:` project id, which a checkout of the same repo on another host derives too.
+ *  Null for the `git:`/`repo:` fallbacks. */
+export function getPortableGitHubProjectId(
+  repo: Pick<Repo, 'id' | 'upstream' | 'repoIcon' | 'gitRemoteIdentity'>
+): string | null {
+  const key = getProjectIdentityKey(repo)
+  return key.startsWith('github:') ? key : null
+}
+
 /**
  * True for the `repo:<id>` fallback above — a folder project, or a git repo with no
  * remote. The id is a per-host repo id, so the same project on another host derives a

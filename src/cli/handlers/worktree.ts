@@ -38,6 +38,7 @@ import {
   resolveCreateParentSelector
 } from './worktree-create-parent-selector'
 import { getOptionalLinearIssueLinkFlag } from './worktree-linear-issue-link'
+import { createWorktreeFromRecipe, getOptionalRecipeFlag } from './worktree-create-recipe'
 
 function assertParentWorktreeFlagsCompatible(flags: Map<string, string | boolean>): void {
   if (flags.has('parent-worktree') && flags.get('no-parent') === true) {
@@ -185,6 +186,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
   'worktree create': async ({ flags, client, cwd, json }) => {
     assertCreateParentFlagsCompatible(flags)
     assertWorkspaceTargetFlagsCompatible(flags)
+    const recipe = getOptionalRecipeFlag(flags)
     const callerTerminalHandle =
       typeof process.env.ORCA_TERMINAL_HANDLE === 'string' &&
       process.env.ORCA_TERMINAL_HANDLE.length > 0
@@ -218,7 +220,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
     const linearIssueLink = getOptionalLinearIssueLinkFlag(flags, 'linear-issue')
     const activate = flags.get('activate') === true || flags.get('run-hooks') === true
     const name = getRequiredStringFlag(flags, 'name')
-    const result = await client.call<RuntimeWorktreeCreateResult>('worktree.create', {
+    const params = {
       repo: await getCreateRepoSelector(flags, cwdParentWorktree, client),
       name,
       displayName: name,
@@ -249,7 +251,11 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
             launchSource: 'cli'
           }
         : {})
-    })
+    }
+    const result =
+      recipe === undefined
+        ? await client.call<RuntimeWorktreeCreateResult>('worktree.create', params)
+        : await createWorktreeFromRecipe(client, { ...params, recipe })
     printHookWarning(result.result, json)
     printLineageSummary(result.result, json)
     printResult(result, json, formatWorktreeShow)

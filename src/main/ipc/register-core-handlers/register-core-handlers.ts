@@ -24,6 +24,9 @@ import { registerRateLimitHandlers } from '../rate-limits'
 import { registerRuntimeHandlers } from '../runtime'
 import { registerRuntimeEnvironmentHandlers } from '../runtime-environments'
 import { registerEphemeralVmHandlers } from '../ephemeral-vm'
+import { getApprovedPluginVmRecipes } from '../../plugins/plugin-approved-vm-recipes'
+import { setRecipeWorktreeCreatorForRpc } from '../../runtime/rpc/methods/worktree-create-from-recipe'
+import { createEphemeralVmRecipeWorktree } from '../../ephemeral-vm-recipe-worktree-create'
 import { registerAiVaultHandlers } from '../ai-vault'
 import { registerAiVaultSearchHandlers } from '../ai-vault-search'
 import { registerNativeChatHandlers } from '../native-chat'
@@ -219,6 +222,14 @@ export function registerCoreHandlers(
   registerRuntimeHandlers(runtime)
   registerRuntimeEnvironmentHandlers(store)
   registerEphemeralVmHandlers(store, pluginService)
+  const recipeWorktreeHost = {
+    store,
+    userDataPath: app.getPath('userData'),
+    listPluginRecipes: () => getApprovedPluginVmRecipes(pluginService)
+  }
+  setRecipeWorktreeCreatorForRpc((args) =>
+    createEphemeralVmRecipeWorktree({ ...args, host: recipeWorktreeHost })
+  )
   registerAiVaultSearchHandlers({
     callRuntimeSearch: (environmentId, method, params) =>
       callRuntimeSessionSearch(app.getPath('userData'), environmentId, method, params)

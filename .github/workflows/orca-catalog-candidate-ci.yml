@@ -22,11 +22,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: yasyf/orca
-          ref: 5b9b33b738ee31afed6fc066160b78c427939637
+          ref: 679d16519453a04454836972e830bdb0670809db
           fetch-depth: 1
           persist-credentials: false
       - name: Verify candidate identity
-        run: test "$(git rev-parse HEAD)" = 5b9b33b738ee31afed6fc066160b78c427939637
+        run: test "$(git rev-parse HEAD)" = 679d16519453a04454836972e830bdb0670809db
       - uses: ./.github/actions/install-node-dependencies
         with:
           native-runtime: node
@@ -36,6 +36,7 @@ jobs:
         continue-on-error: true
         run: >-
           pnpm exec oxfmt --check
+          src/main/ipc/pty-restore-record-seeding.test.ts
           src/main/runtime/construction/runtime-construction-services.ts
           src/main/runtime/construction/runtime-service-state.ts
           src/main/runtime/runtime-resolved-worktree-cache.test.ts
@@ -47,10 +48,13 @@ jobs:
           src/main/runtime/workspaces/workspace-query-prototype.test.ts
           src/main/runtime/worktree-ps-degraded-repo-scan.test.ts
       - name: Typecheck Node runtime
+        id: typecheck
+        continue-on-error: true
         run: pnpm run tc:node
       - name: Exercise catalog, selector, cache and host ownership regressions
         run: >-
           pnpm exec vitest run --config config/vitest.config.ts --project node --maxWorkers=2
+          src/main/ipc/pty-restore-record-seeding.test.ts
           src/main/runtime/worktree-ps-degraded-repo-scan.test.ts
           src/main/runtime/runtime-resolved-worktree-cache.test.ts
           src/main/runtime/repo-worktree-row-resolution.test.ts
@@ -63,13 +67,13 @@ jobs:
       - name: Save formatter corrections
         if: always() && steps.formatting.outcome == 'failure'
         run: |
-          pnpm exec oxfmt --write src/main/runtime/construction/runtime-construction-services.ts src/main/runtime/construction/runtime-service-state.ts src/main/runtime/runtime-resolved-worktree-cache.test.ts src/main/runtime/runtime-resolved-worktree-cache.ts src/main/runtime/sidebar-inputs/orca-runtime-workspace-review-facts.test.ts src/main/runtime/workspaces/workspace-catalog.ts src/main/runtime/workspaces/workspace-process-listing-dependencies.ts src/main/runtime/workspaces/workspace-process-listing.ts src/main/runtime/workspaces/workspace-query-prototype.test.ts src/main/runtime/worktree-ps-degraded-repo-scan.test.ts
+          pnpm exec oxfmt --write src/main/ipc/pty-restore-record-seeding.test.ts src/main/runtime/construction/runtime-construction-services.ts src/main/runtime/construction/runtime-service-state.ts src/main/runtime/runtime-resolved-worktree-cache.test.ts src/main/runtime/runtime-resolved-worktree-cache.ts src/main/runtime/sidebar-inputs/orca-runtime-workspace-review-facts.test.ts src/main/runtime/workspaces/workspace-catalog.ts src/main/runtime/workspaces/workspace-process-listing-dependencies.ts src/main/runtime/workspaces/workspace-process-listing.ts src/main/runtime/workspaces/workspace-query-prototype.test.ts src/main/runtime/worktree-ps-degraded-repo-scan.test.ts
           git diff > catalog-formatting.patch
       - uses: actions/upload-artifact@v4
         if: always() && steps.formatting.outcome == 'failure'
         with:
           name: catalog-formatting-patch
           path: catalog-formatting.patch
-      - name: Require formatting success
-        if: steps.formatting.outcome == 'failure'
+      - name: Require verification success
+        if: always() && (steps.formatting.outcome == 'failure' || steps.typecheck.outcome == 'failure')
         run: exit 1

@@ -66,7 +66,8 @@ describe('getWorkspaceReviewFacts', () => {
       protected override async listResolvedWorktreeSnapshot(): Promise<ResolvedWorktreeSnapshot> {
         return {
           worktrees: [worktree('repo-1::/r/a', 'refs/heads/a'), worktree('repo-1::/r/b', 'b')],
-          platformByRepoId: new Map()
+          platformByRepoId: new Map(),
+          failedRepoScopes: new Set()
         }
       }
     }

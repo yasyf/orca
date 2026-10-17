@@ -12,6 +12,7 @@ import {
 } from '../../project-runtime-git-options'
 import { getAgentLaunchPlatformForRepo } from '../runtime-agent-launch-resolution'
 import {
+  listStoredWorktreeRowsForRepo,
   resolveRepoWorktreeRows,
   resolveScopedWorktreeIdRow
 } from '../repo-worktree-row-resolution'
@@ -86,7 +87,7 @@ export abstract class RuntimeWorkspaceCatalog extends OrcaRuntimeWithReadKittyFi
 
   protected async listResolvedWorktreeSnapshot(): Promise<ResolvedWorktreeSnapshot> {
     if (!this.store) {
-      return { worktrees: [], platformByRepoId: new Map() }
+      return { worktrees: [], platformByRepoId: new Map(), failedRepoScopes: new Set() }
     }
     return this.resolvedWorktrees.getSnapshot(
       () => this.computeResolvedWorktrees(),
@@ -95,9 +96,44 @@ export abstract class RuntimeWorkspaceCatalog extends OrcaRuntimeWithReadKittyFi
     )
   }
 
+  protected async listResolvedCatalogSnapshot(): Promise<ResolvedWorktreeSnapshot> {
+    const snapshot = await this.listResolvedWorktreeSnapshot()
+    if (!this.store || snapshot.failedRepoScopes.size === 0) {
+      return snapshot
+    }
+    const store = this.requireStore()
+    const repos = store.getRepos().filter((repo) => snapshot.failedRepoScopes.has(`${repo.id}\0${getRepoExecutionHostId(repo)}`))
+    const metaById = store.getAllWorktreeMeta() ?? {}
+    const projectRuntimeByRepoId = resolveLocalProjectRuntimesForRepos(store, repos)
+    const deps = {
+      ...this.repoWorktreeRowDeps(),
+      scanRepo: async (repo: Repo): Promise<RuntimeWorktreeScanResult> => ({
+        ok: false,
+        worktrees: listStoredWorktreeRowsForRepo(store, repo)
+      })
+    }
+    const perRepoWorktrees = await Promise.all(
+      repos.map((repo) => resolveRepoWorktreeRows(deps, repo, metaById, projectRuntimeByRepoId))
+    )
+    const lineageById = store.getAllWorktreeLineage?.() ?? {}
+    return {
+      ...snapshot,
+      worktrees: projectResolvedWorktreeLineage(
+        [
+          ...snapshot.worktrees.filter(
+            (worktree) =>
+              !snapshot.failedRepoScopes.has(`${worktree.repoId}\0${worktree.hostId}`)
+          ),
+          ...perRepoWorktrees.flat()
+        ],
+        lineageById
+      )
+    }
+  }
+
   protected async computeResolvedWorktrees(): Promise<ResolvedWorktreeSnapshot> {
     if (!this.store) {
-      return { worktrees: [], platformByRepoId: new Map() }
+      return { worktrees: [], platformByRepoId: new Map(), failedRepoScopes: new Set() }
     }
     const metaById = this.store.getAllWorktreeMeta() ?? {}
     const repos = this.store.getRepos()
@@ -108,7 +144,21 @@ export abstract class RuntimeWorkspaceCatalog extends OrcaRuntimeWithReadKittyFi
         getAgentLaunchPlatformForRepo(repo, projectRuntimeByRepoId.get(repo.id))
       ])
     )
-    const deps = this.repoWorktreeRowDeps()
+    const failedRepoScopes = new Set<string>()
+    const rowDeps = this.repoWorktreeRowDeps()
+    const deps = {
+      ...rowDeps,
+      scanRepo: async (
+        repo: Repo,
+        runtimes: ReadonlyMap<string, ProjectExecutionRuntimeResolution>
+      ): Promise<RuntimeWorktreeScanResult> => {
+        const scan = await rowDeps.scanRepo(repo, runtimes)
+        if (!scan.ok) {
+          failedRepoScopes.add(`${repo.id}\0${getRepoExecutionHostId(repo)}`)
+        }
+        return scan
+      }
+    }
     const perRepoWorktrees = await Promise.all(
       repos.map(
         async (repo) => await resolveRepoWorktreeRows(deps, repo, metaById, projectRuntimeByRepoId)
@@ -116,7 +166,7 @@ export abstract class RuntimeWorkspaceCatalog extends OrcaRuntimeWithReadKittyFi
     )
     const lineageById = this.store?.getAllWorktreeLineage?.() ?? {}
     const worktrees = projectResolvedWorktreeLineage(perRepoWorktrees.flat(), lineageById)
-    return { worktrees, platformByRepoId }
+    return { worktrees, platformByRepoId, failedRepoScopes: new Set(failedRepoScopes) }
   }
 
   /** Bind the runtime-owned scan cache and folder-workspace stamping into the row resolver. */

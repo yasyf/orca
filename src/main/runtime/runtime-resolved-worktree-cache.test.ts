@@ -10,7 +10,8 @@ import {
 function snapshotOf(ids: string[]): ResolvedWorktreeSnapshot {
   return {
     worktrees: ids.map((id) => ({ id }) as ResolvedWorktreeSnapshot['worktrees'][number]),
-    platformByRepoId: new Map()
+    platformByRepoId: new Map(),
+    failedRepoScopes: new Set()
   }
 }
 

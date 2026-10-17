@@ -3,6 +3,7 @@ import type { ResolvedWorktree } from './runtime-worktree-path-identity'
 export type ResolvedWorktreeSnapshot = {
   worktrees: ResolvedWorktree[]
   platformByRepoId: ReadonlyMap<string, NodeJS.Platform>
+  failedRepoScopes: ReadonlySet<string>
 }
 
 type ResolvedCache = ResolvedWorktreeSnapshot & { expiresAt: number; inventoryRevision: number }

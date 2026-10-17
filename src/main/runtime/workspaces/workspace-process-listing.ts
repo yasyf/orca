@@ -66,7 +66,7 @@ export abstract class OrcaRuntimeWithGetWorktreePs extends OrcaRuntimeWithWorktr
     if (!Number.isInteger(limit) || limit <= 0) {
       throw new Error('invalid_limit')
     }
-    const resolvedWorktreeSnapshot = await this.listResolvedWorktreeSnapshot()
+    const resolvedWorktreeSnapshot = await this.listResolvedCatalogSnapshot()
     const visibilitySettings = this.store?.getSettings()
     const visibilitySourceMatchersByRepoId = this.buildRuntimeVisibilitySourceMatchersByRepoId(
       resolvedWorktreeSnapshot.worktrees,

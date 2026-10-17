@@ -147,7 +147,7 @@ export abstract class OrcaRuntimeWithStopRequestedPtyIds extends OrcaRuntimeWith
 
   protected readonly managedWorktreeQueries = new RuntimeManagedWorktreeQueries({
     getStore: () => this.store,
-    listResolved: () => this.listResolvedWorktrees(),
+    listResolved: async () => (await this.listResolvedCatalogSnapshot()).worktrees,
     resolveRepo: (selector) => this.resolveRepoSelector(selector),
     selectRepos: (selector) => this.selectReposBySelector(selector),
     scanRepo: (repo) => this.listRepoWorktreesForListing(repo),

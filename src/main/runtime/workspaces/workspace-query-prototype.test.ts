@@ -46,7 +46,8 @@ const resolved: ResolvedWorktree = {
 }
 const snapshot: ResolvedWorktreeSnapshot = {
   worktrees: [resolved],
-  platformByRepoId: new Map()
+  platformByRepoId: new Map(),
+  failedRepoScopes: new Set()
 }
 
 describe('workspace query prototype dispatch', () => {

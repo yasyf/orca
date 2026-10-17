@@ -8,9 +8,9 @@ import { OrcaRuntimeWithStartTuiIdleVisibleReadProbe } from '../terminal/wait/te
 
 /** Members the worktree listing reads from later runtime layers; declarations only. */
 export abstract class OrcaRuntimeWithWorktreePsDependencies extends OrcaRuntimeWithStartTuiIdleVisibleReadProbe {
-  protected abstract listResolvedWorktreeSnapshot(
-    ...args: Parameters<RuntimeWorkspaceCatalog['listResolvedWorktreeSnapshot']>
-  ): ReturnType<RuntimeWorkspaceCatalog['listResolvedWorktreeSnapshot']>
+  protected abstract listResolvedCatalogSnapshot(
+    ...args: Parameters<RuntimeWorkspaceCatalog['listResolvedCatalogSnapshot']>
+  ): ReturnType<RuntimeWorkspaceCatalog['listResolvedCatalogSnapshot']>
   protected abstract refreshPtyWorktreeRecordsFromController(
     ...args: Parameters<
       OrcaRuntimeWithRefreshPtyWorktreeRecordsFromController['refreshPtyWorktreeRecordsFromController']

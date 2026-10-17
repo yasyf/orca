@@ -175,15 +175,89 @@ describe('worktree.ps on a degraded repo scan', () => {
     }
   })
 
-  // Why: `withTimeout` resolves its fallback on rejection as well as on timeout, so an unabsorbed rejection would silently widen
-  // selector resolution for local repos the way a stall does.
-  it('treats a rejected scan as a real answer instead of restoring persisted worktrees', async () => {
+  it('keeps catalog rows after a failed scan without widening selector resolution', async () => {
     listWorktreesStrictMock.mockRejectedValue(new Error('git unavailable'))
     const runtime = new OrcaRuntimeService(makeStore() as never)
 
     const result = await runtime.getWorktreePs(10_000)
+    const listed = await runtime.listManagedWorktrees(`id:${REPO_ID}`)
 
-    expect(result.worktrees.map((worktree) => worktree.worktreeId)).not.toContain(WORKTREE_ID)
+    expect(result.worktrees.map((worktree) => worktree.worktreeId)).toContain(WORKTREE_ID)
+    expect(listed.worktrees.map((worktree) => worktree.id)).toContain(WORKTREE_ID)
+    await expect(runtime.showManagedWorktree(`id:${WORKTREE_ID}`)).rejects.toThrow(
+      'selector_not_found'
+    )
+  })
+
+  it('preserves a failed repo beside a healthy repo without suppressing its new rows', async () => {
+    const healthyRepoId = 'healthy-repo'
+    const healthyPath = '/Users/me/dev/healthy'
+    listWorktreesStrictMock.mockImplementation(async (repoPath: string) => {
+      if (repoPath === REPO_PATH) {
+        throw new Error('git unavailable')
+      }
+      return [{ path: healthyPath, head: 'abc', branch: 'main', isBare: false, isMainWorktree: true }]
+    })
+    const runtime = new OrcaRuntimeService(
+      makeStore({ coHostedRepos: [{ id: healthyRepoId, path: healthyPath }] }) as never
+    )
+
+    const result = await runtime.getWorktreePs(10_000)
+
+    expect(result.worktrees.map((worktree) => worktree.worktreeId)).toEqual(
+      expect.arrayContaining([WORKTREE_ID, `${healthyRepoId}::${healthyPath}`])
+    )
+  })
+
+  it('keeps a warm catalog when the next scan fails, then admits a confirmed empty scan', async () => {
+    vi.useFakeTimers()
+    try {
+      listWorktreesStrictMock.mockResolvedValue([
+        { path: WORKTREE_PATH, head: 'abc', branch: 'feature', isBare: false, isMainWorktree: false }
+      ])
+      const runtime = new OrcaRuntimeService(makeStore() as never)
+      const warm = await runtime.getWorktreePs(10_000)
+      expect(warm.worktrees.map((worktree) => worktree.worktreeId)).toContain(WORKTREE_ID)
+
+      listWorktreesStrictMock.mockRejectedValue(new Error('git unavailable'))
+      await vi.advanceTimersByTimeAsync(301_000)
+      const failed = await runtime.getWorktreePs(10_000)
+      expect(failed.worktrees.map((worktree) => worktree.worktreeId)).toContain(WORKTREE_ID)
+      await expect(runtime.showManagedWorktree(`id:${WORKTREE_ID}`)).rejects.toThrow(
+        'selector_not_found'
+      )
+
+      listWorktreesStrictMock.mockResolvedValue([])
+      await vi.advanceTimersByTimeAsync(301_000)
+      expect((await runtime.getWorktreePs(10_000)).worktrees).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('preserves a healthy owner when another host of the same repo cannot scan', async () => {
+    listWorktreesStrictMock.mockResolvedValue([
+      { path: LOCAL_REPO_PATH, head: 'abc', branch: 'main-local', isBare: false, isMainWorktree: true }
+    ])
+    const runtime = new OrcaRuntimeService(
+      makeStore({
+        connectionId: SSH_CONNECTION_ID,
+        coHostedRepos: [{ id: REPO_ID, path: LOCAL_REPO_PATH }],
+        metaById: {
+          [WORKTREE_ID]: makeMeta({ hostId: SSH_HOST_ID }),
+          [`${REPO_ID}::${LOCAL_REPO_PATH}`]: makeMeta({ hostId: LOCAL_EXECUTION_HOST_ID })
+        }
+      }) as never
+    )
+
+    const result = await runtime.getWorktreePs(10_000)
+    const local = result.worktrees.filter((worktree) => worktree.hostId === LOCAL_EXECUTION_HOST_ID)
+    const remote = result.worktrees.filter((worktree) => worktree.hostId === SSH_HOST_ID)
+
+    expect(local.map((worktree) => worktree.worktreeId)).toEqual([`${REPO_ID}::${LOCAL_REPO_PATH}`])
+    expect(local[0]?.branch).toBe('main-local')
+    expect(remote.map((worktree) => worktree.worktreeId)).toEqual([WORKTREE_ID])
+    expect(remote[0]?.branch).toBe('')
   })
 
   it('still reports selector_not_found for a local worktree when the scan rejects', async () => {
@@ -202,10 +276,12 @@ describe('worktree.ps on a degraded repo scan', () => {
       listWorktreesStrictMock.mockResolvedValue([])
       const runtime = new OrcaRuntimeService(makeStore() as never)
 
-      await runtime.getWorktreePs(10_000)
+      const first = await runtime.getWorktreePs(10_000)
       await vi.advanceTimersByTimeAsync(2_000)
-      await runtime.getWorktreePs(10_000)
+      const second = await runtime.getWorktreePs(10_000)
 
+      expect(first.worktrees).toEqual([])
+      expect(second.worktrees).toEqual([])
       expect(listWorktreesStrictMock).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()

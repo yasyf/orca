@@ -19,6 +19,7 @@ import type {
 import type { TitleDisplayClear } from '../runtime-worktree-status-projection'
 import type { OrchestrationDb } from '../orchestration/db/orchestration-db'
 import type { ResolvedWorktree } from '../runtime-worktree-path-identity'
+import type { ResolvedWorktreeSnapshot } from '../runtime-resolved-worktree-cache'
 import type {
   RuntimeTerminalShow,
   RuntimeTerminalSummary,
@@ -134,6 +135,7 @@ export abstract class RuntimeConstructionServices {
   protected abstract emitClientEvent: RuntimeClientEventBus['emit']
   protected abstract getOrchestrationDbIfAvailable(): OrchestrationDb | null
   protected abstract listResolvedWorktrees(): Promise<ResolvedWorktree[]>
+  protected abstract listResolvedCatalogSnapshot(): Promise<ResolvedWorktreeSnapshot>
   abstract showTerminal(handle: string): Promise<RuntimeTerminalShow>
   protected abstract issueHandle(leaf: RuntimeLeafRecord): string
   protected abstract issuePtyHandle(pty: RuntimePtyWorktreeRecord): string

@@ -28,6 +28,18 @@ function runElectronBuilderNativeRebuild(context, runner = execFileSync, runtime
       ],
       { cwd: projectDir, stdio: 'inherit' }
     )
+  } else {
+    runner(
+      process.execPath,
+      [
+        'config/scripts/native-build/posix/build-posix-agent-hook.mjs',
+        '--platform',
+        readPlatformName(context?.platform),
+        '--arch',
+        readArchName(context?.arch)
+      ],
+      { cwd: projectDir, stdio: 'inherit' }
+    )
   }
   runner(process.execPath, args, {
     cwd: projectDir,

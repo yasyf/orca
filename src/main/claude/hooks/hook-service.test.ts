@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { vi, describe, expect, it } from 'vitest'
@@ -43,4 +43,35 @@ describe('ClaudeHookService.install', () => {
       rmSync(tmpHome, { recursive: true, force: true })
     }
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'registers the bundled native hook in exec form and removes it with the script entries',
+    () => {
+      const tmpHome = mkdtempSync(join(tmpdir(), 'orca-claude-native-hook-'))
+      const resourcesPath = join(tmpHome, 'resources')
+      mkdirSync(join(resourcesPath, 'bin'), { recursive: true })
+      writeFileSync(join(resourcesPath, 'bin', 'orca-agent-hook'), 'native hook')
+      Object.defineProperty(process, 'resourcesPath', { value: resourcesPath, configurable: true })
+      vi.stubEnv('HOME', tmpHome)
+      try {
+        const service = new ClaudeHookService()
+        expect(service.install({ claudeVersion: '2.1.300' }).state).toBe('installed')
+        const hooksDir = join(tmpHome, '.orca', 'agent-hooks')
+        expect(readFileSync(join(hooksDir, 'orca-agent-hook'), 'utf-8')).toBe('native hook')
+        const settingsPath = join(tmpHome, '.claude', 'settings.json')
+        const { hooks } = JSON.parse(readFileSync(settingsPath, 'utf-8'))
+        expect(hooks.PreToolUse[0].hooks[0]).toMatchObject({
+          type: 'command',
+          command: join(hooksDir, 'orca-agent-hook'),
+          args: ['claude', join(hooksDir, 'claude-hook.sh')]
+        })
+
+        expect(service.remove().state).toBe('not_installed')
+      } finally {
+        Reflect.deleteProperty(process, 'resourcesPath')
+        vi.unstubAllEnvs()
+        rmSync(tmpHome, { recursive: true, force: true })
+      }
+    }
+  )
 })

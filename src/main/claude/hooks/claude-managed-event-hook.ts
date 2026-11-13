@@ -1,5 +1,9 @@
-import { buildManagedCommandHook } from '../../agent-hooks/installation/configuration/hook-config-schema'
+import {
+  buildManagedCommandHook,
+  MANAGED_HOOK_TIMEOUT_SECONDS
+} from '../../agent-hooks/installation/configuration/hook-config-schema'
 import type { HookCommandConfig } from '../../agent-hooks/installation/configuration/hook-config-schema'
+import { getWindowsNativeHookAgent } from '../../agent-hooks/installation/commands/windows-native-hook-executable'
 import {
   CLAUDE_HOOK_SETTINGS,
   getManagedLifecycleHook,
@@ -18,10 +22,19 @@ export function getManagedEventHook(
   nativeHookPath: string | null = null,
   options: NativeHookFormOptions = {}
 ): HookCommandConfig {
-  return process.platform === 'win32'
-    ? getManagedLifecycleHook(scriptPath, settings, nativeHookPath, options)
-    : buildManagedCommandHook(
-        getRemoteManagedEventCommand(eventName, scriptPath),
-        eventName === 'PermissionRequest' ? CLAUDE_PERMISSION_HOOK_TIMEOUT_SECONDS : undefined
-      )
+  if (process.platform === 'win32') {
+    return getManagedLifecycleHook(scriptPath, settings, nativeHookPath, options)
+  }
+  const timeout =
+    eventName === 'PermissionRequest' ? CLAUDE_PERMISSION_HOOK_TIMEOUT_SECONDS : undefined
+  // Exec form starts the native hook alone; the script path lets reinstalls find the entry.
+  if (nativeHookPath && options.execForm) {
+    return {
+      type: 'command',
+      command: nativeHookPath,
+      args: [getWindowsNativeHookAgent(scriptPath), scriptPath],
+      timeout: timeout ?? MANAGED_HOOK_TIMEOUT_SECONDS
+    }
+  }
+  return buildManagedCommandHook(getRemoteManagedEventCommand(eventName, scriptPath), timeout)
 }

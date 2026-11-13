@@ -637,6 +637,11 @@ module.exports = {
         from: 'resources/darwin/bin/orca',
         to: 'bin/orca'
       },
+      // The hook installer copies this file, signed with the app, into ~/.orca/agent-hooks (#20913).
+      {
+        from: 'native/windows-agent-hook/.build/darwin-${arch}/orca-agent-hook',
+        to: 'bin/orca-agent-hook'
+      },
       {
         from: 'node_modules/agent-browser/bin/agent-browser-darwin-${arch}',
         to: 'agent-browser-darwin-${arch}'
@@ -704,6 +709,10 @@ module.exports = {
       {
         from: 'resources/linux/bin/orca-ide',
         to: 'bin/orca-ide'
+      },
+      {
+        from: 'native/windows-agent-hook/.build/linux-${arch}/orca-agent-hook',
+        to: 'bin/orca-agent-hook'
       },
       {
         from: 'node_modules/agent-browser/bin/agent-browser-linux-${arch}',

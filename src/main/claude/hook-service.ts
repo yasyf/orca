@@ -33,6 +33,12 @@ import {
   installWindowsClaudeHookFiles,
   refreshWindowsClaudeHookFiles
 } from './hooks/windows-hook-files'
+import {
+  getPosixClaudeHookExecutablePath,
+  getPosixClaudeHookFileStatus,
+  installPosixClaudeHookExecutable,
+  refreshPosixClaudeHookExecutable
+} from './hooks/posix-hook-executable'
 
 import { getManagedStatusLineScript } from './hooks/statusline-script'
 // oxfmt-ignore
@@ -96,6 +102,20 @@ export class ClaudeHookService {
     return process.platform === 'win32' && this.options.agent === 'claude'
   }
 
+  private get usesPosixNativeHook(): boolean {
+    return (
+      (process.platform === 'darwin' || process.platform === 'linux') &&
+      this.options.agent === 'claude'
+    )
+  }
+
+  private nativeHookPath(scriptPath: string): string | null {
+    if (this.usesWindowsEntry) {
+      return getWindowsClaudeHookExecutablePath(scriptPath)
+    }
+    return this.usesPosixNativeHook ? getPosixClaudeHookExecutablePath(scriptPath) : null
+  }
+
   private managedScript(target: 'local' | 'posix' = 'local'): string {
     return getManagedScript(target, {
       source: this.options.source,
@@ -131,8 +151,8 @@ export class ClaudeHookService {
       }
     }
 
-    // Count either Windows launcher form: installation falls back to .cmd when the exe cannot be placed.
-    const exePath = this.usesWindowsEntry ? getWindowsClaudeHookExecutablePath(scriptPath) : null
+    // Count either launcher form: install falls back to the script without the executable.
+    const exePath = this.nativeHookPath(scriptPath)
     const events = this.managedHookPlan(options).install.map((event) => event.eventName)
     const { missing, matchedForms } = findManagedEventHookForms(config, events, (eventName) =>
       [null, exePath].map((path) =>
@@ -155,8 +175,11 @@ export class ClaudeHookService {
       detail = `Managed hook missing for events: ${missing.join(', ')}`
     }
     const status = { agent: this.options.agent, state, configPath, managedHooksPresent, detail }
-    return this.usesWindowsEntry
-      ? getWindowsClaudeHookFileStatus(status, scriptPath, matchedForms.includes(1))
+    if (this.usesWindowsEntry) {
+      return getWindowsClaudeHookFileStatus(status, scriptPath, matchedForms.includes(1))
+    }
+    return this.usesPosixNativeHook
+      ? getPosixClaudeHookFileStatus(status, scriptPath, matchedForms.includes(1))
       : status
   }
 
@@ -173,6 +196,9 @@ export class ClaudeHookService {
     }
     const scriptPath = getManagedScriptPath(this.options.settings)
     const payload = this.managedScript()
+    if (this.usesPosixNativeHook) {
+      await refreshPosixClaudeHookExecutable(scriptPath)
+    }
     await (this.usesWindowsEntry
       ? refreshWindowsClaudeHookFiles(scriptPath, payload)
       : refreshManagedScriptIfPresent(scriptPath, payload))
@@ -202,7 +228,11 @@ export class ClaudeHookService {
     }
 
     const plan = this.managedHookPlan(options)
-    const exePath = this.usesWindowsEntry ? installWindowsClaudeHookExecutable(scriptPath) : null
+    const exePath = this.usesWindowsEntry
+      ? installWindowsClaudeHookExecutable(scriptPath)
+      : this.usesPosixNativeHook
+        ? installPosixClaudeHookExecutable(scriptPath)
+        : null
     const execForm = claudeAcceptsExecFormHooks(options.claudeVersion)
     let nextConfig = applyManagedHooks(
       config,

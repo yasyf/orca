@@ -1,16 +1,24 @@
-//! Orca's native Windows agent hook, registered as `orca-agent-hook.exe <agent>`: answers
+//! Orca's native agent hook. On Windows, registered as `orca-agent-hook.exe <agent>`, it answers
 //! `{}`, then posts the hook payload to Orca's loopback listener and waits for the reply,
 //! so status events arrive in the order the agent emitted them.
 //!
 //! Why native: the `.cmd` form costs a cmd.exe start (plus the user's AutoRun) and
 //! a curl.exe start on every event, and only an executable runs the same way under
 //! Git Bash, PowerShell, and a direct CreateProcess (#20913). The `claude` contract
-//! mirrors the managed Windows script in src/main/claude/hook-script.ts.
+//! mirrors the managed Windows script in src/main/claude/hook-script.ts. The macOS and
+//! Linux build lives in `posix.rs`.
+
+#[cfg(unix)]
+mod posix;
 
 use std::env;
 use std::fs::File;
-use std::io::{self, Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpStream};
+use std::io::Read;
+#[cfg(not(unix))]
+use std::io::{self, Write};
+use std::net::TcpStream;
+#[cfg(not(unix))]
+use std::net::{Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 // Same caps as the curl form's `--connect-timeout 0.5 --max-time 1.5`.
@@ -38,21 +46,31 @@ fn agent(name: &str) -> Option<Agent> {
 }
 
 fn main() {
+    let agent = env::args_os().nth(1).and_then(|arg| agent(arg.to_str()?));
+    #[cfg(unix)]
+    posix::main(agent);
+    #[cfg(not(unix))]
+    run_windows(agent);
+    // Why always 0: a hook failure must never block or fail the agent's tool call.
+    std::process::exit(0);
+}
+
+#[cfg(not(unix))]
+fn run_windows(agent: Option<Agent>) {
     let mut stdout = io::stdout();
     // Why first: Claude-compatible permission hooks fail closed on empty stdout (#14818).
     let _ = stdout.write_all(b"{}\r\n");
     let _ = stdout.flush();
     // Why no stdin for an unknown agent: a newer Orca may register one this copy predates.
-    if let Some(agent) = env::args_os().nth(1).and_then(|arg| agent(arg.to_str()?)) {
+    if let Some(agent) = agent {
         run(&agent);
     }
-    // Why always 0: a hook failure must never block or fail the agent's tool call.
-    std::process::exit(0);
 }
 
+#[cfg(not(unix))]
 fn run(agent: &Agent) {
     // Why: refresh the listener coordinates for terminals that survived an Orca restart.
-    let endpoint = read_endpoint_file();
+    let endpoint = read_endpoint_file().unwrap_or_default();
     let coordinate = |key: &str| endpoint_value(&endpoint, key).unwrap_or_else(|| var(key));
     let port = coordinate("ORCA_AGENT_HOOK_PORT");
     let token = coordinate("ORCA_AGENT_HOOK_TOKEN");
@@ -84,31 +102,35 @@ fn var(name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The file src/shared/agent-hook-listener/endpoint-publication.ts writes, or "" if unreadable.
-fn read_endpoint_file() -> String {
+/// The file src/shared/agent-hook-listener/endpoint-publication.ts writes, or None if unreadable.
+fn read_endpoint_file() -> Option<String> {
     let mut text = String::new();
-    let read = File::open(var("ORCA_AGENT_HOOK_ENDPOINT")).and_then(|file| {
-        file.take(ENDPOINT_FILE_BYTE_LIMIT)
-            .read_to_string(&mut text)
-    });
-    if read.is_err() {
-        text.clear();
-    }
-    text
+    File::open(var("ORCA_AGENT_HOOK_ENDPOINT"))
+        .and_then(|file| {
+            file.take(ENDPOINT_FILE_BYTE_LIMIT)
+                .read_to_string(&mut text)
+        })
+        .ok()
+        .map(|_| text)
 }
 
-/// The last `set KEY=VALUE` for `key`, as `call` would leave it; `lines` strips the CRLF.
+/// `set ` on Windows (`endpoint.cmd`); POSIX `endpoint.env` lines are bare assignments.
+const ENDPOINT_ASSIGNMENT_PREFIX: &str = if cfg!(unix) { "" } else { "set " };
+
+/// The last `KEY=VALUE` for `key`, as `call` or `.` would leave it; `lines` strips the CRLF.
 fn endpoint_value(text: &str, key: &str) -> Option<String> {
+    let prefix = ENDPOINT_ASSIGNMENT_PREFIX;
     text.lines().rev().find_map(|line| {
         let assignment = line
-            .get(..4)
-            .filter(|prefix| prefix.eq_ignore_ascii_case("set "))
-            .and(line.get(4..))?;
+            .get(..prefix.len())
+            .filter(|head| head.eq_ignore_ascii_case(prefix))
+            .and(line.get(prefix.len()..))?;
         let (name, value) = assignment.split_once('=')?;
         (name == key).then(|| value.to_string())
     })
 }
 
+#[cfg(not(unix))]
 fn post(source: &str, port: &str, token: &str, form: &[(&str, String)], payload: &[u8]) {
     let Ok(port) = port.parse::<u16>() else {
         return;
